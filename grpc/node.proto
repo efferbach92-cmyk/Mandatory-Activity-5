@@ -1,0 +1,34 @@
+syntax = "proto3";
+option go_package = "github.com/efferbach92-cmyk/Mandatory-Activity-5/grpc";
+
+enum BidStatus {
+    UNKNOWN=0;
+    SUCCESS=1; 
+    FAIL=2;
+    AUCTION_OVER=3;
+    ERROR=4; 
+}
+
+service AuctionService {
+
+rpc Bid(BidRequest) returns (BidResponse); 
+rpc Result(Empty) returns (ResultResponse);
+
+}
+
+message BidRequest {
+    string bidder = 1;
+    int32 bid = 2;
+}
+
+message BidResponse {
+    BidStatus status = 1;
+}
+
+message Empty {}
+
+message ResultResponse {
+    string winner = 1;
+    int32 winning_bid = 2;
+    bool auction_over = 3;
+}
