@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 type NodeServer struct {
 	proto.UnimplementedAuctionServiceServer
+	proto.UnimplementedNodeServiceServer
 	node *Node
 }
 
@@ -25,6 +27,7 @@ func (s *NodeServer) start_server(port string) {
 	}
 
 	proto.RegisterAuctionServiceServer(grpcServer, s)
+	proto.RegisterNodeServiceServer(grpcServer, s)
 	log.Printf("[Server] event=STARTUP port=%s", port)
 
 	if err := grpcServer.Serve(listener); err != nil {
@@ -53,4 +56,35 @@ func main() {
 	}
 
 	server.start_server(server.node.port)
+}
+
+func (n *NodeServer) Replicate(ctx context.Context, req *proto.ReplicateRequest) (*proto.ReplicateResponse, error) {
+	log.Printf("[Server] event=REPLICATION_REQUEST sequenceNumber=%d requestID=%d bidder=%s amount=%d term=%d",
+		req.SequenceNumber, req.RequestID, req.Bidder, req.Amount, req.Term)
+
+	// Modtager budet og gemmer det i loggen
+	entry := BidEntry{
+		sequenceNumber: req.SequenceNumber,
+		requestID:      req.RequestID,
+		bidder:         req.Bidder,
+		amount:         req.Amount,
+	}
+	n.node.log = append(n.node.log, entry)
+
+	// sender en bekræftelse tilbage til lederen
+	return &proto.ReplicateResponse{
+		Acknowledged: true,
+	}, nil
+}
+
+func (n *NodeServer) Bid(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
+	log.Printf("[Node %d] event=BID_RECEIVED bidder=%s amount=%d",
+		n.node.id, req.Bidder, req.Bid)
+
+	if n.node.role != "leader" {
+		// noden skal vidersende buddet til lederen. har bare lavet return så det kan compile
+	}
+	return &proto.BidResponse{
+		Status: proto.BidStatus_ERROR,
+	}, nil
 }

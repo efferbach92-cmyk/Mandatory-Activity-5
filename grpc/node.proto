@@ -10,7 +10,6 @@ enum BidStatus {
 }
 
 service AuctionService {
-
 rpc Bid(BidRequest) returns (BidResponse); 
 rpc Result(Empty) returns (ResultResponse);
 
@@ -31,4 +30,39 @@ message ResultResponse {
     string winner = 1;
     int32 winning_bid = 2;
     bool auction_over = 3;
+}
+
+service NodeService {
+    rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+    rpc Heartbeat(HeartbeatRequest) returns (Empty);
+    rpc RequestVote(VoteRequest) returns (VoteResponse);
+}
+
+message ReplicateRequest {
+    int32 sequenceNumber  = 1;
+    int32 requestID = 2;
+    string bidder = 3;
+    int32 amount = 4;
+    int32 term = 5;
+}
+
+message ReplicateResponse {
+    bool acknowledged = 1;
+}
+
+message HeartbeatRequest {
+    int32 LeaderID = 1;
+    int32 Term = 2;
+}
+
+message VoteRequest {
+    int32 CandidateID = 1;
+    int32 term = 2;
+    int32 LastLogIndex = 3;
+    int32 LastLogTerm = 4;
+}
+
+message VoteResponse {
+    int32 Term = 1;
+    bool VoteGranted = 2;
 }

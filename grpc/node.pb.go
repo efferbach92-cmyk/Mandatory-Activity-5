@@ -268,6 +268,298 @@ func (x *ResultResponse) GetAuctionOver() bool {
 	return false
 }
 
+type ReplicateRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SequenceNumber int32                  `protobuf:"varint,1,opt,name=sequenceNumber,proto3" json:"sequenceNumber,omitempty"`
+	RequestID      int32                  `protobuf:"varint,2,opt,name=requestID,proto3" json:"requestID,omitempty"`
+	Bidder         string                 `protobuf:"bytes,3,opt,name=bidder,proto3" json:"bidder,omitempty"`
+	Amount         int32                  `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Term           int32                  `protobuf:"varint,5,opt,name=term,proto3" json:"term,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ReplicateRequest) Reset() {
+	*x = ReplicateRequest{}
+	mi := &file_grpc_node_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicateRequest) ProtoMessage() {}
+
+func (x *ReplicateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_grpc_node_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicateRequest.ProtoReflect.Descriptor instead.
+func (*ReplicateRequest) Descriptor() ([]byte, []int) {
+	return file_grpc_node_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ReplicateRequest) GetSequenceNumber() int32 {
+	if x != nil {
+		return x.SequenceNumber
+	}
+	return 0
+}
+
+func (x *ReplicateRequest) GetRequestID() int32 {
+	if x != nil {
+		return x.RequestID
+	}
+	return 0
+}
+
+func (x *ReplicateRequest) GetBidder() string {
+	if x != nil {
+		return x.Bidder
+	}
+	return ""
+}
+
+func (x *ReplicateRequest) GetAmount() int32 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
+}
+
+func (x *ReplicateRequest) GetTerm() int32 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+type ReplicateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Acknowledged  bool                   `protobuf:"varint,1,opt,name=acknowledged,proto3" json:"acknowledged,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicateResponse) Reset() {
+	*x = ReplicateResponse{}
+	mi := &file_grpc_node_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicateResponse) ProtoMessage() {}
+
+func (x *ReplicateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_grpc_node_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicateResponse.ProtoReflect.Descriptor instead.
+func (*ReplicateResponse) Descriptor() ([]byte, []int) {
+	return file_grpc_node_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ReplicateResponse) GetAcknowledged() bool {
+	if x != nil {
+		return x.Acknowledged
+	}
+	return false
+}
+
+type HeartbeatRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaderID      int32                  `protobuf:"varint,1,opt,name=LeaderID,proto3" json:"LeaderID,omitempty"`
+	Term          int32                  `protobuf:"varint,2,opt,name=Term,proto3" json:"Term,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HeartbeatRequest) Reset() {
+	*x = HeartbeatRequest{}
+	mi := &file_grpc_node_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeartbeatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeartbeatRequest) ProtoMessage() {}
+
+func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_grpc_node_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
+func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
+	return file_grpc_node_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *HeartbeatRequest) GetLeaderID() int32 {
+	if x != nil {
+		return x.LeaderID
+	}
+	return 0
+}
+
+func (x *HeartbeatRequest) GetTerm() int32 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+type VoteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CandidateID   int32                  `protobuf:"varint,1,opt,name=CandidateID,proto3" json:"CandidateID,omitempty"`
+	Term          int32                  `protobuf:"varint,2,opt,name=term,proto3" json:"term,omitempty"`
+	LastLogIndex  int32                  `protobuf:"varint,3,opt,name=LastLogIndex,proto3" json:"LastLogIndex,omitempty"`
+	LastLogTerm   int32                  `protobuf:"varint,4,opt,name=LastLogTerm,proto3" json:"LastLogTerm,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VoteRequest) Reset() {
+	*x = VoteRequest{}
+	mi := &file_grpc_node_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VoteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VoteRequest) ProtoMessage() {}
+
+func (x *VoteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_grpc_node_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VoteRequest.ProtoReflect.Descriptor instead.
+func (*VoteRequest) Descriptor() ([]byte, []int) {
+	return file_grpc_node_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *VoteRequest) GetCandidateID() int32 {
+	if x != nil {
+		return x.CandidateID
+	}
+	return 0
+}
+
+func (x *VoteRequest) GetTerm() int32 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *VoteRequest) GetLastLogIndex() int32 {
+	if x != nil {
+		return x.LastLogIndex
+	}
+	return 0
+}
+
+func (x *VoteRequest) GetLastLogTerm() int32 {
+	if x != nil {
+		return x.LastLogTerm
+	}
+	return 0
+}
+
+type VoteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Term          int32                  `protobuf:"varint,1,opt,name=Term,proto3" json:"Term,omitempty"`
+	VoteGranted   bool                   `protobuf:"varint,2,opt,name=VoteGranted,proto3" json:"VoteGranted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VoteResponse) Reset() {
+	*x = VoteResponse{}
+	mi := &file_grpc_node_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VoteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VoteResponse) ProtoMessage() {}
+
+func (x *VoteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_grpc_node_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VoteResponse.ProtoReflect.Descriptor instead.
+func (*VoteResponse) Descriptor() ([]byte, []int) {
+	return file_grpc_node_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *VoteResponse) GetTerm() int32 {
+	if x != nil {
+		return x.Term
+	}
+	return 0
+}
+
+func (x *VoteResponse) GetVoteGranted() bool {
+	if x != nil {
+		return x.VoteGranted
+	}
+	return false
+}
+
 var File_grpc_node_proto protoreflect.FileDescriptor
 
 const file_grpc_node_proto_rawDesc = "" +
@@ -285,7 +577,26 @@ const file_grpc_node_proto_rawDesc = "" +
 	"\x06winner\x18\x01 \x01(\tR\x06winner\x12\x1f\n" +
 	"\vwinning_bid\x18\x02 \x01(\x05R\n" +
 	"winningBid\x12!\n" +
-	"\fauction_over\x18\x03 \x01(\bR\vauctionOver*L\n" +
+	"\fauction_over\x18\x03 \x01(\bR\vauctionOver\"\x9c\x01\n" +
+	"\x10ReplicateRequest\x12&\n" +
+	"\x0esequenceNumber\x18\x01 \x01(\x05R\x0esequenceNumber\x12\x1c\n" +
+	"\trequestID\x18\x02 \x01(\x05R\trequestID\x12\x16\n" +
+	"\x06bidder\x18\x03 \x01(\tR\x06bidder\x12\x16\n" +
+	"\x06amount\x18\x04 \x01(\x05R\x06amount\x12\x12\n" +
+	"\x04term\x18\x05 \x01(\x05R\x04term\"7\n" +
+	"\x11ReplicateResponse\x12\"\n" +
+	"\facknowledged\x18\x01 \x01(\bR\facknowledged\"B\n" +
+	"\x10HeartbeatRequest\x12\x1a\n" +
+	"\bLeaderID\x18\x01 \x01(\x05R\bLeaderID\x12\x12\n" +
+	"\x04Term\x18\x02 \x01(\x05R\x04Term\"\x89\x01\n" +
+	"\vVoteRequest\x12 \n" +
+	"\vCandidateID\x18\x01 \x01(\x05R\vCandidateID\x12\x12\n" +
+	"\x04term\x18\x02 \x01(\x05R\x04term\x12\"\n" +
+	"\fLastLogIndex\x18\x03 \x01(\x05R\fLastLogIndex\x12 \n" +
+	"\vLastLogTerm\x18\x04 \x01(\x05R\vLastLogTerm\"D\n" +
+	"\fVoteResponse\x12\x12\n" +
+	"\x04Term\x18\x01 \x01(\x05R\x04Term\x12 \n" +
+	"\vVoteGranted\x18\x02 \x01(\bR\vVoteGranted*L\n" +
 	"\tBidStatus\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\v\n" +
 	"\aSUCCESS\x10\x01\x12\b\n" +
@@ -294,7 +605,11 @@ const file_grpc_node_proto_rawDesc = "" +
 	"\x05ERROR\x10\x042U\n" +
 	"\x0eAuctionService\x12 \n" +
 	"\x03Bid\x12\v.BidRequest\x1a\f.BidResponse\x12!\n" +
-	"\x06Result\x12\x06.Empty\x1a\x0f.ResultResponseB7Z5github.com/efferbach92-cmyk/Mandatory-Activity-5/grpcb\x06proto3"
+	"\x06Result\x12\x06.Empty\x1a\x0f.ResultResponse2\x95\x01\n" +
+	"\vNodeService\x122\n" +
+	"\tReplicate\x12\x11.ReplicateRequest\x1a\x12.ReplicateResponse\x12&\n" +
+	"\tHeartbeat\x12\x11.HeartbeatRequest\x1a\x06.Empty\x12*\n" +
+	"\vRequestVote\x12\f.VoteRequest\x1a\r.VoteResponseB7Z5github.com/efferbach92-cmyk/Mandatory-Activity-5/grpcb\x06proto3"
 
 var (
 	file_grpc_node_proto_rawDescOnce sync.Once
@@ -309,22 +624,33 @@ func file_grpc_node_proto_rawDescGZIP() []byte {
 }
 
 var file_grpc_node_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_grpc_node_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_grpc_node_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_grpc_node_proto_goTypes = []any{
-	(BidStatus)(0),         // 0: BidStatus
-	(*BidRequest)(nil),     // 1: BidRequest
-	(*BidResponse)(nil),    // 2: BidResponse
-	(*Empty)(nil),          // 3: Empty
-	(*ResultResponse)(nil), // 4: ResultResponse
+	(BidStatus)(0),            // 0: BidStatus
+	(*BidRequest)(nil),        // 1: BidRequest
+	(*BidResponse)(nil),       // 2: BidResponse
+	(*Empty)(nil),             // 3: Empty
+	(*ResultResponse)(nil),    // 4: ResultResponse
+	(*ReplicateRequest)(nil),  // 5: ReplicateRequest
+	(*ReplicateResponse)(nil), // 6: ReplicateResponse
+	(*HeartbeatRequest)(nil),  // 7: HeartbeatRequest
+	(*VoteRequest)(nil),       // 8: VoteRequest
+	(*VoteResponse)(nil),      // 9: VoteResponse
 }
 var file_grpc_node_proto_depIdxs = []int32{
 	0, // 0: BidResponse.status:type_name -> BidStatus
 	1, // 1: AuctionService.Bid:input_type -> BidRequest
 	3, // 2: AuctionService.Result:input_type -> Empty
-	2, // 3: AuctionService.Bid:output_type -> BidResponse
-	4, // 4: AuctionService.Result:output_type -> ResultResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
+	5, // 3: NodeService.Replicate:input_type -> ReplicateRequest
+	7, // 4: NodeService.Heartbeat:input_type -> HeartbeatRequest
+	8, // 5: NodeService.RequestVote:input_type -> VoteRequest
+	2, // 6: AuctionService.Bid:output_type -> BidResponse
+	4, // 7: AuctionService.Result:output_type -> ResultResponse
+	6, // 8: NodeService.Replicate:output_type -> ReplicateResponse
+	3, // 9: NodeService.Heartbeat:output_type -> Empty
+	9, // 10: NodeService.RequestVote:output_type -> VoteResponse
+	6, // [6:11] is the sub-list for method output_type
+	1, // [1:6] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -341,9 +667,9 @@ func file_grpc_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_grpc_node_proto_rawDesc), len(file_grpc_node_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   9,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_grpc_node_proto_goTypes,
 		DependencyIndexes: file_grpc_node_proto_depIdxs,
