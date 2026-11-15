@@ -400,6 +400,7 @@ type HeartbeatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	LeaderID      int32                  `protobuf:"varint,1,opt,name=LeaderID,proto3" json:"LeaderID,omitempty"`
 	Term          int32                  `protobuf:"varint,2,opt,name=Term,proto3" json:"Term,omitempty"`
+	CommitIndex   int32                  `protobuf:"varint,3,opt,name=CommitIndex,proto3" json:"CommitIndex,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -444,6 +445,13 @@ func (x *HeartbeatRequest) GetLeaderID() int32 {
 func (x *HeartbeatRequest) GetTerm() int32 {
 	if x != nil {
 		return x.Term
+	}
+	return 0
+}
+
+func (x *HeartbeatRequest) GetCommitIndex() int32 {
+	if x != nil {
+		return x.CommitIndex
 	}
 	return 0
 }
@@ -594,10 +602,11 @@ const file_grpc_node_proto_rawDesc = "" +
 	"\x06amount\x18\x04 \x01(\x05R\x06amount\x12\x12\n" +
 	"\x04term\x18\x05 \x01(\x05R\x04term\"7\n" +
 	"\x11ReplicateResponse\x12\"\n" +
-	"\facknowledged\x18\x01 \x01(\bR\facknowledged\"B\n" +
+	"\facknowledged\x18\x01 \x01(\bR\facknowledged\"d\n" +
 	"\x10HeartbeatRequest\x12\x1a\n" +
 	"\bLeaderID\x18\x01 \x01(\x05R\bLeaderID\x12\x12\n" +
-	"\x04Term\x18\x02 \x01(\x05R\x04Term\"\x89\x01\n" +
+	"\x04Term\x18\x02 \x01(\x05R\x04Term\x12 \n" +
+	"\vCommitIndex\x18\x03 \x01(\x05R\vCommitIndex\"\x89\x01\n" +
 	"\vVoteRequest\x12 \n" +
 	"\vCandidateID\x18\x01 \x01(\x05R\vCandidateID\x12\x12\n" +
 	"\x04term\x18\x02 \x01(\x05R\x04term\x12\"\n" +
