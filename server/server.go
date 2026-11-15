@@ -56,6 +56,7 @@ func main() {
 	}
 	if id == 1 {
 		server.node.role = "leader"
+		server.node.auctionEnd = time.Now().Add(2 * time.Minute) //auktionen varer 2 minutter (kan ændres)
 	}
 
 	server.start_server(server.node.port)
@@ -104,6 +105,12 @@ func (n *NodeServer) Bid(ctx context.Context, req *proto.BidRequest) (*proto.Bid
 	}
 	n.node.mu.Lock()
 	defer n.node.mu.Unlock()
+
+	if time.Now().After(n.node.auctionEnd) {
+		return &proto.BidResponse{
+			Status: proto.BidStatus_AUCTION_OVER,
+		}, nil
+	}
 
 	// tjekker om der er et bud, som ikke er committed.
 	// forsøger at replikerer det igen før vi behandler et nyt bud.
@@ -215,4 +222,37 @@ func (n *NodeServer) Heartbeat(ctx context.Context, req *proto.HeartbeatRequest)
 		n.node.commitIndex = min(req.CommitIndex, int32(len(n.node.log)))
 	}
 	return &proto.Empty{}, nil
+}
+
+func (n *NodeServer) Result(ctx context.Context, req *proto.Empty) (*proto.ResultResponse, error) {
+	if n.node.role != "leader" {
+		return n.forwardResultToLeader(ctx, req)
+	}
+	n.node.mu.Lock()
+	defer n.node.mu.Unlock()
+
+	response := &proto.ResultResponse{}
+	if n.node.commitIndex > 0 {
+		lastBid := n.node.log[n.node.commitIndex-1]
+		response.WinningBid = lastBid.amount
+		response.Winner = lastBid.bidder
+	}
+	response.AuctionOver = time.Now().After(n.node.auctionEnd)
+	return response, nil
+}
+
+func (n *NodeServer) forwardResultToLeader(ctx context.Context, req *proto.Empty) (*proto.ResultResponse, error) {
+	leaderAddress, ok := nodeAddresses[n.node.leaderID]
+	// finder lederen i nodeAddresses mappet på baggrund af leaderID. Hvis lederen ikke findes, returneres en
+	if !ok {
+		return nil, fmt.Errorf("leader address not found for node %d", n.node.leaderID)
+	}
+	// opretter en gRPC-forbindelse til lederen og sender buddet videre
+	conn, err := grpc.NewClient(leaderAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	leaderClient := proto.NewAuctionServiceClient(conn)
+	return leaderClient.Result(ctx, req)
 }
