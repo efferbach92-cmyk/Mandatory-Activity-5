@@ -1,6 +1,9 @@
 package main
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 var nodeAddresses = map[int32]string{
 	1: "localhost:5050",
@@ -16,6 +19,7 @@ type Node struct {
 	commitIndex int32
 	port        string
 	mu          sync.Mutex
+	auctionEnd  time.Time
 }
 
 type BidEntry struct {
