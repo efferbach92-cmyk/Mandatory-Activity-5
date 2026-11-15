@@ -1,5 +1,11 @@
 package main
 
+var nodeAddresses = map[int32]string{
+	1: "localhost:50050",
+	2: "localhost:50051",
+	3: "localhost:50052",
+}
+
 type Node struct {
 	id       int32
 	role     string

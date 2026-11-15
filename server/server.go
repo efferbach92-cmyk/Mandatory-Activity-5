@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	proto "github.com/efferbach92-cmyk/Mandatory-Activity-5/grpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type NodeServer struct {
@@ -87,4 +89,18 @@ func (n *NodeServer) Bid(ctx context.Context, req *proto.BidRequest) (*proto.Bid
 	return &proto.BidResponse{
 		Status: proto.BidStatus_ERROR,
 	}, nil
+}
+
+func (n *NodeServer) forwardBidToLeader(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
+	leaderAddress, ok := nodeAddresses[n.node.leaderID]
+	// finder lederen i nodeAddresses mappet på baggrund af leaderID. Hvis lederen ikke findes, returneres en
+	if !ok {
+		return nil, fmt.Errorf("leader address not found for node %d", n.node.leaderID)
+	}
+
+	conn, err := grpc.NewClient(leaderAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
 }
