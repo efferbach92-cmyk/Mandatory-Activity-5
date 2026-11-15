@@ -84,10 +84,30 @@ func (n *NodeServer) Bid(ctx context.Context, req *proto.BidRequest) (*proto.Bid
 		n.node.id, req.Bidder, req.Bid)
 
 	if n.node.role != "leader" {
-		// noden skal vidersende buddet til lederen. har bare lavet return så det kan compile
+		return n.forwardBidToLeader(ctx, req)
 	}
+	n.node.mu.Lock()
+	defer n.node.mu.Unlock()
+	var highestBid int32 = 0
+	if n.node.commitIndex > 0 {
+		highestBid = n.node.log[n.node.commitIndex-1].amount
+	}
+	if highestBid >= req.Bid {
+		return &proto.BidResponse{
+			Status: proto.BidStatus_FAIL,
+		}, nil
+	}
+	entry := BidEntry{
+		sequenceNumber: int32(len(n.node.log) + 1),
+		requestID:      req.RequestID,
+		bidder:         req.Bidder,
+		amount:         req.Bid,
+	}
+	n.node.log = append(n.node.log, entry)
+
+	n.node.commitIndex++
 	return &proto.BidResponse{
-		Status: proto.BidStatus_ERROR,
+		Status: proto.BidStatus_SUCCESS,
 	}, nil
 }
 
@@ -97,10 +117,43 @@ func (n *NodeServer) forwardBidToLeader(ctx context.Context, req *proto.BidReque
 	if !ok {
 		return nil, fmt.Errorf("leader address not found for node %d", n.node.leaderID)
 	}
-
+	// opretter en gRPC-forbindelse til lederen og sender buddet videre
 	conn, err := grpc.NewClient(leaderAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
+	leaderClient := proto.NewAuctionServiceClient(conn)
+	return leaderClient.Bid(ctx, req)
+}
+
+func (n *NodeServer) replicateBidToFollowers(ctx context.Context, entry BidEntry) bool {
+	ackRecieved := false
+	for id, address := range nodeAddresses {
+		if id == n.node.id {
+			continue // skipper sig selv (lederen)
+		}
+		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Printf("[Node %d] Failed to create client for node %d: %v", n.node.id, id, err)
+			continue
+		}
+		defer conn.Close()
+		nodeClient := proto.NewNodeServiceClient(conn)
+		request := &proto.ReplicateRequest{
+			SequenceNumber: entry.sequenceNumber,
+			RequestID:      entry.requestID,
+			Bidder:         entry.bidder,
+			Amount:         entry.amount,
+		}
+		response, err := nodeClient.Replicate(ctx, request)
+		if err != nil {
+			log.Printf("[Node %d] Failed to replicate to node %d: %v", n.node.id, id, err)
+			continue
+		}
+		if response.Acknowledged {
+			ackRecieved = true
+		}
+	}
+	return ackRecieved
 }

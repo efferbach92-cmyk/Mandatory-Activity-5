@@ -80,6 +80,7 @@ type BidRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Bidder        string                 `protobuf:"bytes,1,opt,name=bidder,proto3" json:"bidder,omitempty"`
 	Bid           int32                  `protobuf:"varint,2,opt,name=bid,proto3" json:"bid,omitempty"`
+	RequestID     int32                  `protobuf:"varint,3,opt,name=requestID,proto3" json:"requestID,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -124,6 +125,13 @@ func (x *BidRequest) GetBidder() string {
 func (x *BidRequest) GetBid() int32 {
 	if x != nil {
 		return x.Bid
+	}
+	return 0
+}
+
+func (x *BidRequest) GetRequestID() int32 {
+	if x != nil {
+		return x.RequestID
 	}
 	return 0
 }
@@ -564,11 +572,12 @@ var File_grpc_node_proto protoreflect.FileDescriptor
 
 const file_grpc_node_proto_rawDesc = "" +
 	"\n" +
-	"\x0fgrpc/node.proto\"6\n" +
+	"\x0fgrpc/node.proto\"T\n" +
 	"\n" +
 	"BidRequest\x12\x16\n" +
 	"\x06bidder\x18\x01 \x01(\tR\x06bidder\x12\x10\n" +
-	"\x03bid\x18\x02 \x01(\x05R\x03bid\"1\n" +
+	"\x03bid\x18\x02 \x01(\x05R\x03bid\x12\x1c\n" +
+	"\trequestID\x18\x03 \x01(\x05R\trequestID\"1\n" +
 	"\vBidResponse\x12\"\n" +
 	"\x06status\x18\x01 \x01(\x0e2\n" +
 	".BidStatusR\x06status\"\a\n" +

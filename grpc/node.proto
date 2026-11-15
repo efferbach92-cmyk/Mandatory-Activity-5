@@ -18,6 +18,7 @@ rpc Result(Empty) returns (ResultResponse);
 message BidRequest {
     string bidder = 1;
     int32 bid = 2;
+    int32 requestID = 3;
 }
 
 message BidResponse {

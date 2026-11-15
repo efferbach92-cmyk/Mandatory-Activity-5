@@ -1,17 +1,21 @@
 package main
 
+import "sync"
+
 var nodeAddresses = map[int32]string{
-	1: "localhost:50050",
-	2: "localhost:50051",
-	3: "localhost:50052",
+	1: "localhost:5050",
+	2: "localhost:5051",
+	3: "localhost:5052",
 }
 
 type Node struct {
-	id       int32
-	role     string
-	leaderID int32
-	log      []BidEntry
-	port     string
+	id          int32
+	role        string
+	leaderID    int32
+	log         []BidEntry
+	commitIndex int32
+	port        string
+	mu          sync.Mutex
 }
 
 type BidEntry struct {
