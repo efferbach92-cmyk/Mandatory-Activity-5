@@ -97,6 +97,7 @@ func main() {
 			port:     port,
 			role:     "follower",
 			leaderID: 1,
+			term:     1, // alle starter i term 1, hvor node 1 er leder
 		},
 	}
 	if id == 1 {
@@ -113,6 +114,9 @@ func main() {
 	// Background process that sends frequent heartbeats to followers.
 	go server.heartbeatLoop()
 
+	// Baggrundsproces der starter et valg, hvis lederens heartbeats stopper (se election.go).
+	go server.electionLoop()
+
 	server.start_server(port)
 }
 
@@ -122,6 +126,18 @@ func (n *NodeServer) Replicate(ctx context.Context, req *proto.ReplicateRequest)
 	defer n.node.mu.Unlock()
 	log.Printf("[Server] event=REPLICATION_REQUEST sequenceNumber=%d requestID=%d bidder=%s amount=%d term=%d",
 		req.SequenceNumber, req.RequestID, req.Bidder, req.Amount, req.Term)
+	// Afviser bud fra en gammel leder, der er i en ældre term end os.
+	if req.Term < n.node.term {
+		return &proto.ReplicateResponse{
+			Acknowledged: false,
+		}, nil
+	}
+	// En besked fra en gyldig leder tæller også som livstegn, ligesom et heartbeat.
+	if req.Term > n.node.term {
+		n.node.term = req.Term
+		n.node.votedFor = 0
+	}
+	n.node.lastHeartbeat = time.Now()
 	// vi tjekker om sekvensnummmeret er ugyldigt, eller er for højt.
 	if req.SequenceNumber < 1 || req.SequenceNumber > int32(len(n.node.log))+1 {
 		return &proto.ReplicateResponse{
@@ -155,7 +171,7 @@ func (n *NodeServer) Bid(ctx context.Context, req *proto.BidRequest) (*proto.Bid
 	log.Printf("[Node %d] event=BID_RECEIVED bidder=%s amount=%d",
 		n.node.id, req.Bidder, req.Bid)
 
-	if n.node.role != "leader" {
+	if !n.isLeader() {
 		return n.forwardBidToLeader(ctx, req)
 	}
 	n.node.mu.Lock()
@@ -213,10 +229,15 @@ func (n *NodeServer) Bid(ctx context.Context, req *proto.BidRequest) (*proto.Bid
 }
 
 func (n *NodeServer) forwardBidToLeader(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
-	leaderAddress, ok := nodeAddresses[n.node.leaderID]
+	leaderID := n.currentLeader()
+	// Hvis vi selv står som leder, men ikke er det (midt i et valg), ville vi sende buddet til os selv i ring.
+	if leaderID == n.node.id {
+		return nil, fmt.Errorf("no leader right now, election in progress")
+	}
+	leaderAddress, ok := nodeAddresses[leaderID]
 	// finder lederen i nodeAddresses mappet på baggrund af leaderID. Hvis lederen ikke findes, returneres en
 	if !ok {
-		return nil, fmt.Errorf("leader address not found for node %d", n.node.leaderID)
+		return nil, fmt.Errorf("leader address not found for node %d", leaderID)
 	}
 	// opretter en gRPC-forbindelse til lederen og sender buddet videre
 	conn, err := grpc.NewClient(leaderAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -248,6 +269,7 @@ func (n *NodeServer) replicateBidToFollowers(ctx context.Context, entry BidEntry
 				RequestID:      logEntry.requestID,
 				Bidder:         logEntry.bidder,
 				Amount:         logEntry.amount,
+				Term:           n.node.term, // så followers kan afvise en gammel leder
 			}
 			rpcCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			response, err := nodeClient.Replicate(rpcCtx, request)
@@ -273,9 +295,22 @@ const heartbeatInterval = 500 * time.Millisecond
 func (n *NodeServer) Heartbeat(ctx context.Context, req *proto.HeartbeatRequest) (*proto.Empty, error) {
 	n.node.mu.Lock()
 	defer n.node.mu.Unlock()
-	if req.LeaderID != n.node.leaderID {
-		return nil, fmt.Errorf("heartbeat from unknown leader: %d", req.LeaderID)
+	// Heartbeat fra en gammel leder i en ældre term. Den ignorerer vi.
+	if req.Term < n.node.term {
+		return nil, fmt.Errorf("heartbeat from old term %d, current term is %d", req.Term, n.node.term)
 	}
+	// Ny term betyder at der har været et valg. Vi rykker med op og har en ny stemme at give.
+	if req.Term > n.node.term {
+		n.node.term = req.Term
+		n.node.votedFor = 0
+	}
+	if req.LeaderID != n.node.leaderID {
+		log.Printf("[Node %d] event=NEW_LEADER leader=%d term=%d", n.node.id, req.LeaderID, req.Term)
+	}
+	// Afsenderen er den gyldige leder. Vi følger den og nulstiller stopuret til leader election.
+	n.node.role = "follower"
+	n.node.leaderID = req.LeaderID
+	n.node.lastHeartbeat = time.Now()
 	if req.CommitIndex > n.node.commitIndex {
 		n.node.commitIndex = min(req.CommitIndex, int32(len(n.node.log)))
 	}
@@ -303,6 +338,7 @@ func (s *NodeServer) heartbeatLoop() {
 		// Creates a heartbeat message containing these:
 		req := &proto.HeartbeatRequest{
 			LeaderID:    n.id,
+			Term:        n.term,
 			CommitIndex: n.commitIndex,
 		}
 		n.mu.Unlock()
@@ -322,7 +358,7 @@ func (s *NodeServer) heartbeatLoop() {
 }
 
 func (n *NodeServer) Result(ctx context.Context, req *proto.Empty) (*proto.ResultResponse, error) {
-	if n.node.role != "leader" {
+	if !n.isLeader() {
 		return n.forwardResultToLeader(ctx, req)
 	}
 	n.node.mu.Lock()
@@ -339,10 +375,15 @@ func (n *NodeServer) Result(ctx context.Context, req *proto.Empty) (*proto.Resul
 }
 
 func (n *NodeServer) forwardResultToLeader(ctx context.Context, req *proto.Empty) (*proto.ResultResponse, error) {
-	leaderAddress, ok := nodeAddresses[n.node.leaderID]
+	leaderID := n.currentLeader()
+	// Samme tjek som i forwardBidToLeader: undgå at sende til os selv i ring.
+	if leaderID == n.node.id {
+		return nil, fmt.Errorf("no leader right now, election in progress")
+	}
+	leaderAddress, ok := nodeAddresses[leaderID]
 	// finder lederen i nodeAddresses mappet på baggrund af leaderID. Hvis lederen ikke findes, returneres en
 	if !ok {
-		return nil, fmt.Errorf("leader address not found for node %d", n.node.leaderID)
+		return nil, fmt.Errorf("leader address not found for node %d", leaderID)
 	}
 	// opretter en gRPC-forbindelse til lederen og sender buddet videre
 	conn, err := grpc.NewClient(leaderAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))

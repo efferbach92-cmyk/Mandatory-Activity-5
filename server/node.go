@@ -20,6 +20,11 @@ type Node struct {
 	port        string
 	mu          sync.Mutex
 	auctionEnd  time.Time
+
+	// Leader election
+	term          int32     // valgnummer. Tæller op hver gang nogen starter et valg.
+	votedFor      int32     // hvem vi har stemt på i denne term. 0 = ingen endnu.
+	lastHeartbeat time.Time // hvornår vi sidst hørte fra lederen.
 }
 
 type BidEntry struct {
