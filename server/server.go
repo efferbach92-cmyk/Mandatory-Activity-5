@@ -8,6 +8,9 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"io"
+	
+	
 
 	proto "github.com/efferbach92-cmyk/Mandatory-Activity-5/grpc"
 	"google.golang.org/grpc"
@@ -18,6 +21,11 @@ type NodeServer struct {
 	proto.UnimplementedAuctionServiceServer
 	proto.UnimplementedNodeServiceServer
 	node *Node
+
+
+	// Stores reusable gRPC clients for commmu with the other nodes.
+	nodeClients map[int32]proto.NodeServiceClient
+	
 }
 
 func (s *NodeServer) start_server(port string) {
@@ -28,7 +36,6 @@ func (s *NodeServer) start_server(port string) {
 		log.Fatalf("Server did not start: %v", err)
 		//%v indsætter den konkrete fejl og fejlen bliver logget
 	}
-
 	proto.RegisterAuctionServiceServer(grpcServer, s)
 	proto.RegisterNodeServiceServer(grpcServer, s)
 	log.Printf("[Server] event=STARTUP port=%s", port)
@@ -38,6 +45,24 @@ func (s *NodeServer) start_server(port string) {
 	}
 }
 
+
+// Creates and stores gRPC clients for commu with all other nodes. Each node gets a NodeServiceClient
+func (s *NodeServer) connectToPeers() {
+	s.nodeClients = make (map[int32]proto.NodeServiceClient)
+	for id, addr := range nodeAddresses {
+		if id == s.node.id {
+			continue
+		}
+		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+		if err != nil {
+			log.Fatalf("[Node %d] event =Error msg=%v", s.node.id, err)
+		}
+		s.nodeClients[id] = proto.NewNodeServiceClient(conn)
+	}
+}
+
+
 func main() {
 	if len(os.Args) != 3 {
 		log.Fatal("Usage: go run ./server <nodeID> <port>")
@@ -46,10 +71,30 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	port := os.Args[2]
+
+	// Checks that the provided node ID and port match the nodes configured address.
+	if want, ok := nodeAddresses[int32(id)]; !ok || want != "localhost:"+port {
+		log.Fatalf("node %d should run on address in nodeAdresses (%q)", id, want)
+	}
+
+
+	// OpenFile and Multiwriter from MA3
+	logFile, err := os.OpenFile(fmt.Sprintf("node=%d.log", id), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err !=nil {
+		log.Fatalf("could not open log file: %v", err)
+	}
+
+	// One logfile pr. node and Lmicroseconds timestamped from MA4
+	defer logFile.Close()
+	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+
 	server := &NodeServer{
 		node: &Node{
 			id:       int32(id),
-			port:     os.Args[2],
+			port:     port,
 			role:     "follower",
 			leaderID: 1,
 		},
@@ -57,10 +102,20 @@ func main() {
 	if id == 1 {
 		server.node.role = "leader"
 		server.node.auctionEnd = time.Now().Add(2 * time.Minute) //auktionen varer 2 minutter (kan ændres)
+		log.Printf("Node 1] event = Auction_Start ends=%s", server.node.auctionEnd.Format(time.RFC3339)) //
 	}
 
-	server.start_server(server.node.port)
+	// RPC connections to all other nodes
+	server.connectToPeers()
+
+
+
+	// Background process that sends frequent heartbeats to followers.
+	go server.heartbeatLoop()
+
+	server.start_server(port)
 }
+
 
 func (n *NodeServer) Replicate(ctx context.Context, req *proto.ReplicateRequest) (*proto.ReplicateResponse, error) {
 	n.node.mu.Lock()
@@ -212,6 +267,9 @@ func (n *NodeServer) replicateBidToFollowers(ctx context.Context, entry BidEntry
 	return ackRecieved
 }
 
+// Defines how often the leader sends heartbeats: every 500 milliseconds.
+const heartbeatInterval = 500 * time.Millisecond
+
 func (n *NodeServer) Heartbeat(ctx context.Context, req *proto.HeartbeatRequest) (*proto.Empty, error) {
 	n.node.mu.Lock()
 	defer n.node.mu.Unlock()
@@ -222,6 +280,45 @@ func (n *NodeServer) Heartbeat(ctx context.Context, req *proto.HeartbeatRequest)
 		n.node.commitIndex = min(req.CommitIndex, int32(len(n.node.log)))
 	}
 	return &proto.Empty{}, nil
+}
+
+
+// Sends periodic heartbeats from the leader to all followers.
+func (s *NodeServer) heartbeatLoop() {
+	n := s.node
+
+	// Creates a ticker that triggers every 500 ms. Defer makes sur that it stops when func exits.
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+
+
+	// Checks every 500 ms if the node is the leader. If not, it skips the heartbeat.
+	for range ticker.C {
+		n.mu.Lock()
+		if n.role != "leader" {
+			n.mu.Unlock()
+			continue
+		}
+		// Creates a heartbeat message containing these:
+		req := &proto.HeartbeatRequest{
+			LeaderID:    n.id,
+			CommitIndex: n.commitIndex,
+		}
+		n.mu.Unlock()
+
+		for _, c := range s.nodeClients {
+			go func(c proto.NodeServiceClient) { // starts separate goroutine for each follower. This allow heartbeats to be sent concurrently
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel() // Sets 1 secound timeout for heartbeat req and make sure its resources are released afterwards.
+
+				// Calls followers heartbeat() RPC. If fcks the error is written to log
+				if _, err := c.Heartbeat(ctx, req); err != nil {
+					log.Printf("[Node %d] event=HEARTBEAT_FAILED msg=%v", n.id, err)
+				}
+			}(c) // pas currenct follower client in the goroutine.
+		}
+	}
 }
 
 func (n *NodeServer) Result(ctx context.Context, req *proto.Empty) (*proto.ResultResponse, error) {
