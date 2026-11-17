@@ -124,12 +124,14 @@ func (s *NodeServer) startElection() {
 	// Vi sender derfor hele loggen til den anden follower og committer den,
 	// så et bud, som en klient fik SUCCESS på, ikke forsvinder fra Result.
 	if len(n.log) > int(n.commitIndex) {
-		last := n.log[len(n.log)-1]
-		if s.replicateBidToFollowers(context.Background(), last) {
-			n.commitIndex = int32(len(n.log))
-		}
+		go func() {
+			n.bidMu.Lock()
+			defer n.bidMu.Unlock()
+			s.commitAll(context.Background())
+		}()
 	}
 }
+
 
 // RequestVote bliver kaldt af en kandidat, der vil have vores stemme.
 func (s *NodeServer) RequestVote(ctx context.Context, req *proto.VoteRequest) (*proto.VoteResponse, error) {

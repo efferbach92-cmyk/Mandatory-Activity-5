@@ -55,6 +55,7 @@ message HeartbeatRequest {
     int32 LeaderID = 1;
     int32 Term = 2;
     int32 CommitIndex = 3;
+    int64 auctionEndUnixNano = 4;
 }
 
 message VoteRequest {
