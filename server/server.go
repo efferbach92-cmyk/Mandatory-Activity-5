@@ -9,12 +9,16 @@ import (
 	"strconv"
 	"time"
 	"io"
+	"sync"
+	"sync/atomic"
 	
 	
 
 	proto "github.com/efferbach92-cmyk/Mandatory-Activity-5/grpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/codes" // handling old hearbeat from leader
+	"google.golang.org/grpc/status" // handling old hearbeat from leader
 )
 
 type NodeServer struct {
@@ -124,6 +128,7 @@ func main() {
 func (n *NodeServer) Replicate(ctx context.Context, req *proto.ReplicateRequest) (*proto.ReplicateResponse, error) {
 	n.node.mu.Lock()
 	defer n.node.mu.Unlock()
+
 	log.Printf("[Server] event=REPLICATION_REQUEST sequenceNumber=%d requestID=%d bidder=%s amount=%d term=%d",
 		req.SequenceNumber, req.RequestID, req.Bidder, req.Amount, req.Term)
 	// Afviser bud fra en gammel leder, der er i en ældre term end os.
@@ -136,6 +141,7 @@ func (n *NodeServer) Replicate(ctx context.Context, req *proto.ReplicateRequest)
 	if req.Term > n.node.term {
 		n.node.term = req.Term
 		n.node.votedFor = 0
+		n.node.role = "follower"
 	}
 	n.node.lastHeartbeat = time.Now()
 	// vi tjekker om sekvensnummmeret er ugyldigt, eller er for højt.
@@ -147,10 +153,20 @@ func (n *NodeServer) Replicate(ctx context.Context, req *proto.ReplicateRequest)
 	// tjekker om sekvensnummeret allerede findes i loggen. Hvis det gør,
 	// tjekker vi om requestID matcher. Hvis det matcher, returnerer vi en bekræftelse. Hvis det ikke matcher, returnerer vi en afvisning.
 	if req.SequenceNumber <= int32(len(n.node.log)) {
-		existing := n.node.log[req.SequenceNumber-1]
-		return &proto.ReplicateResponse{
-			Acknowledged: existing.requestID == req.RequestID, // returnerer true eller false
-		}, nil
+		index := req.SequenceNumber - 1
+		existing := n.node.log[index]
+
+		// Acknowledges only if all entry fields match.
+		if existing.requestID == req.RequestID &&
+			existing.bidder == req.Bidder &&
+			existing.amount == req.Amount {
+			return &proto.ReplicateResponse{Acknowledged: true}, nil
+		}
+
+		if index < n.node.commitIndex {
+			return &proto.ReplicateResponse{Acknowledged: false}, nil
+		}
+		n.node.log = n.node.log[:index]
 	}
 	// Modtager budet og gemmer det i loggen
 	entry := BidEntry{
@@ -166,127 +182,147 @@ func (n *NodeServer) Replicate(ctx context.Context, req *proto.ReplicateRequest)
 		Acknowledged: true,
 	}, nil
 }
-
 func (n *NodeServer) Bid(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
-	log.Printf("[Node %d] event=BID_RECEIVED bidder=%s amount=%d",
-		n.node.id, req.Bidder, req.Bid)
+	log.Printf("[Node %d] event=BID_RECEIVED bidder=%s amount=%d requestID=%d",
+		n.node.id, req.Bidder, req.Bid, req.RequestID)
 
 	if !n.isLeader() {
 		return n.forwardBidToLeader(ctx, req)
 	}
+	n.node.bidMu.Lock()
+	defer n.node.bidMu.Unlock()
+
+
 	n.node.mu.Lock()
-	defer n.node.mu.Unlock()
 
-	if time.Now().After(n.node.auctionEnd) {
-		return &proto.BidResponse{
-			Status: proto.BidStatus_AUCTION_OVER,
-		}, nil
+	// Checks the node is still the leader before processing the bid.
+	if n.node.role != "leader" {
+    n.node.mu.Unlock()
+    return &proto.BidResponse{Status: proto.BidStatus_ERROR}, nil
+}
+
+	auctionEnd := n.node.auctionEnd
+
+	// checks if the same bid already exists in the server log
+	duplicate := false
+	for _, entry := range n.node.log {
+    if entry.requestID == req.RequestID && entry.bidder == req.Bidder {
+        duplicate = true
+        break
+    }
+}
+
+	n.node.mu.Unlock()
+
+	if duplicate {
+		if n.commitAll(ctx) {
+			return &proto.BidResponse{Status: proto.BidStatus_SUCCESS}, nil
+		}
+		return &proto.BidResponse{Status: proto.BidStatus_ERROR}, nil
 	}
 
-	// tjekker om der er et bud, som ikke er committed.
-	// forsøger at replikerer det igen før vi behandler et nyt bud.
-	if len(n.node.log) > int(n.node.commitIndex) {
-		pending := n.node.log[n.node.commitIndex]
-		if !n.replicateBidToFollowers(ctx, pending) {
-			return &proto.BidResponse{
-				Status: proto.BidStatus_ERROR,
-			}, nil
-		}
-		n.node.commitIndex++
-		if pending.requestID == req.RequestID {
-			return &proto.BidResponse{
-				Status: proto.BidStatus_SUCCESS,
-			}, nil
-		}
+	if !auctionEnd.IsZero() && time.Now().After(auctionEnd) {
+		log.Printf("[Node %d] event=AUCTION_OVER bidder=%s amount=%d", n.node.id, req.Bidder, req.Bid)
+		return &proto.BidResponse{Status: proto.BidStatus_AUCTION_OVER}, nil
 	}
-	var highestBid int32 = 0
-	if n.node.commitIndex > 0 {
-		highestBid = n.node.log[n.node.commitIndex-1].amount
+
+	if !n.commitAll(ctx) {
+		return &proto.BidResponse{Status: proto.BidStatus_ERROR}, nil
 	}
-	if highestBid >= req.Bid {
-		return &proto.BidResponse{
-			Status: proto.BidStatus_FAIL,
-		}, nil
+
+	n.node.mu.Lock()
+
+	var highestBid int32
+	if len(n.node.log) > 0 {
+		highestBid = n.node.log[len(n.node.log)-1].amount
 	}
-	entry := BidEntry{
+	
+	if req.Bid <= highestBid {
+		n.node.mu.Unlock()
+		return &proto.BidResponse{Status: proto.BidStatus_FAIL}, nil
+	}
+
+	n.node.log = append(n.node.log, BidEntry{
 		sequenceNumber: int32(len(n.node.log) + 1),
 		requestID:      req.RequestID,
 		bidder:         req.Bidder,
 		amount:         req.Bid,
-	}
-	n.node.log = append(n.node.log, entry)
+	})
 
-	ackRecieved := n.replicateBidToFollowers(ctx, entry)
-	if !ackRecieved {
-		return &proto.BidResponse{
-			Status: proto.BidStatus_ERROR,
-		}, nil
+	n.node.mu.Unlock()
+
+	if !n.commitAll(ctx) {
+		return &proto.BidResponse{Status: proto.BidStatus_ERROR}, nil
 	}
-	n.node.commitIndex++
-	return &proto.BidResponse{
-		Status: proto.BidStatus_SUCCESS,
-	}, nil
+
+	log.Printf("[Node %d] event=BID_COMMITTED bidder=%s amount=%d",
+		n.node.id, req.Bidder, req.Bid)
+
+	return &proto.BidResponse{Status: proto.BidStatus_SUCCESS}, nil
+}
+// Replicates the entire log and updates the commit index after confirmation
+func (n *NodeServer) commitAll (ctx context.Context) bool {
+	n.node.mu.Lock()
+	target := int32(len(n.node.log))
+
+	if n.node.commitIndex >= target {
+		n.node.mu.Unlock()
+		return true
+	}
+
+	entries := append([]BidEntry(nil), n.node.log...)
+	term := n.node.term
+	n.node.mu.Unlock()
+
+	if !n.replicateToFollowers(ctx, entries, term) {
+		return false
+	}
+
+	n.node.mu.Lock()
+	if n.node.commitIndex < target {
+		n.node.commitIndex = target
+	}
+	n.node.mu.Unlock()
+
+	return true
 }
 
-func (n *NodeServer) forwardBidToLeader(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
-	leaderID := n.currentLeader()
-	// Hvis vi selv står som leder, men ikke er det (midt i et valg), ville vi sende buddet til os selv i ring.
-	if leaderID == n.node.id {
-		return nil, fmt.Errorf("no leader right now, election in progress")
-	}
-	leaderAddress, ok := nodeAddresses[leaderID]
-	// finder lederen i nodeAddresses mappet på baggrund af leaderID. Hvis lederen ikke findes, returneres en
-	if !ok {
-		return nil, fmt.Errorf("leader address not found for node %d", leaderID)
-	}
-	// opretter en gRPC-forbindelse til lederen og sender buddet videre
-	conn, err := grpc.NewClient(leaderAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	leaderClient := proto.NewAuctionServiceClient(conn)
-	return leaderClient.Bid(ctx, req)
-}
+ // Sends log entries to all followers concurrently and checks for a majority.
+func (n *NodeServer) replicateToFollowers(ctx context.Context, entries []BidEntry, term int32) bool {
+	var acks int32
+	var wg sync.WaitGroup
 
-func (n *NodeServer) replicateBidToFollowers(ctx context.Context, entry BidEntry) bool {
-	ackRecieved := false
-	for id, address := range nodeAddresses {
-		if id == n.node.id {
-			continue // skipper sig selv (lederen)
-		}
-		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			log.Printf("[Node %d] Failed to create client for node %d: %v", n.node.id, id, err)
-			continue
-		}
-		defer conn.Close()
-		nodeClient := proto.NewNodeServiceClient(conn)
-		for _, logEntry := range n.node.log {
+	for id, client := range n.nodeClients {
+		wg.Add(1)
 
-			request := &proto.ReplicateRequest{
-				SequenceNumber: logEntry.sequenceNumber,
-				RequestID:      logEntry.requestID,
-				Bidder:         logEntry.bidder,
-				Amount:         logEntry.amount,
-				Term:           n.node.term, // så followers kan afvise en gammel leder
+		go func(id int32, client proto.NodeServiceClient) {
+			defer wg.Done()
+
+			for _, e := range entries {
+				rpcCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+
+				resp, err := client.Replicate(rpcCtx, &proto.ReplicateRequest{
+					SequenceNumber: e.sequenceNumber,
+					RequestID:      e.requestID,
+					Bidder:         e.bidder,
+					Amount:         e.amount,
+					Term:           term,
+				})
+
+				cancel()
+
+				if err != nil || !resp.Acknowledged {
+					return
+				}
 			}
-			rpcCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			response, err := nodeClient.Replicate(rpcCtx, request)
-			cancel()
-			if err != nil {
-				log.Printf("[Node %d] Failed to replicate to node %d: %v", n.node.id, id, err)
-				break
-			}
-			if !response.Acknowledged {
-				break
-			}
-			if logEntry.sequenceNumber == entry.sequenceNumber {
-				ackRecieved = true
-			}
-		}
+
+			atomic.AddInt32(&acks, 1)
+		}(id, client)
 	}
-	return ackRecieved
+
+	wg.Wait()
+
+	return atomic.LoadInt32(&acks) >= int32(len(nodeAddresses)/2)
 }
 
 // Defines how often the leader sends heartbeats: every 500 milliseconds.
@@ -297,7 +333,8 @@ func (n *NodeServer) Heartbeat(ctx context.Context, req *proto.HeartbeatRequest)
 	defer n.node.mu.Unlock()
 	// Heartbeat fra en gammel leder i en ældre term. Den ignorerer vi.
 	if req.Term < n.node.term {
-		return nil, fmt.Errorf("heartbeat from old term %d, current term is %d", req.Term, n.node.term)
+		return nil, status.Error(codes.FailedPrecondition,
+    fmt.Sprintf("heartbeat from old term %d, current term is %d", req.Term, n.node.term))
 	}
 	// Ny term betyder at der har været et valg. Vi rykker med op og har en ny stemme at give.
 	if req.Term > n.node.term {
@@ -311,6 +348,7 @@ func (n *NodeServer) Heartbeat(ctx context.Context, req *proto.HeartbeatRequest)
 	n.node.role = "follower"
 	n.node.leaderID = req.LeaderID
 	n.node.lastHeartbeat = time.Now()
+	n.node.auctionEnd = time.Unix(0, req.AuctionEndUnixNano) // Saves the leaders end time locally on the follower.
 	if req.CommitIndex > n.node.commitIndex {
 		n.node.commitIndex = min(req.CommitIndex, int32(len(n.node.log)))
 	}
@@ -327,7 +365,6 @@ func (s *NodeServer) heartbeatLoop() {
 	defer ticker.Stop()
 
 
-
 	// Checks every 500 ms if the node is the leader. If not, it skips the heartbeat.
 	for range ticker.C {
 		n.mu.Lock()
@@ -340,19 +377,20 @@ func (s *NodeServer) heartbeatLoop() {
 			LeaderID:    n.id,
 			Term:        n.term,
 			CommitIndex: n.commitIndex,
+			AuctionEndUnixNano: n.auctionEnd.UnixNano(), // Sends the auctions end time to followers.
 		}
 		n.mu.Unlock()
 
-		for _, c := range s.nodeClients {
-			go func(c proto.NodeServiceClient) { // starts separate goroutine for each follower. This allow heartbeats to be sent concurrently
+		for id, c := range s.nodeClients {
+			go func(id int32, c proto.NodeServiceClient) { // starts separate goroutine for each follower. This allow heartbeats to be sent concurrently
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel() // Sets 1 secound timeout for heartbeat req and make sure its resources are released afterwards.
 
 				// Calls followers heartbeat() RPC. If fcks the error is written to log
 				if _, err := c.Heartbeat(ctx, req); err != nil {
-					log.Printf("[Node %d] event=HEARTBEAT_FAILED msg=%v", n.id, err)
+					log.Printf("[Node %d] event=HEARTBEAT_FAILED follower=%d msg=%v", n.id, id, err)
 				}
-			}(c) // pas currenct follower client in the goroutine.
+			}(id, c) // pas currenct follower client in the goroutine.
 		}
 	}
 }
@@ -370,7 +408,9 @@ func (n *NodeServer) Result(ctx context.Context, req *proto.Empty) (*proto.Resul
 		response.WinningBid = lastBid.amount
 		response.Winner = lastBid.bidder
 	}
-	response.AuctionOver = time.Now().After(n.node.auctionEnd)
+	response.AuctionOver = !n.node.auctionEnd.IsZero() &&
+    time.Now().After(n.node.auctionEnd)
+	log.Printf("[Node %d] event=RESULT winner=%s amount=%d auctionOver=%v", n.node.id, response.Winner, response.WinningBid, response.AuctionOver)
 	return response, nil
 }
 
@@ -394,3 +434,25 @@ func (n *NodeServer) forwardResultToLeader(ctx context.Context, req *proto.Empty
 	leaderClient := proto.NewAuctionServiceClient(conn)
 	return leaderClient.Result(ctx, req)
 }
+func (n *NodeServer) forwardBidToLeader(ctx context.Context, req *proto.BidRequest) (*proto.BidResponse, error) {
+	leaderID := n.currentLeader()
+	// Hvis vi selv står som leder, men ikke er det (midt i et valg), ville vi sende buddet til os selv i ring.
+	if leaderID == n.node.id {
+		return nil, fmt.Errorf("no leader right now, election in progress")
+	}
+	leaderAddress, ok := nodeAddresses[leaderID]
+	// finder lederen i nodeAddresses mappet på baggrund af leaderID. Hvis lederen ikke findes, returneres en
+	if !ok {
+		return nil, fmt.Errorf("leader address not found for node %d", leaderID)
+	}
+	// opretter en gRPC-forbindelse til lederen og sender buddet videre
+	conn, err := grpc.NewClient(leaderAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	leaderClient := proto.NewAuctionServiceClient(conn)
+	return leaderClient.Bid(ctx, req)
+}
+
+

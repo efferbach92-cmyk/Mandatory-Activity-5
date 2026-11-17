@@ -25,6 +25,9 @@ type Node struct {
 	term          int32     // valgnummer. Tæller op hver gang nogen starter et valg.
 	votedFor      int32     // hvem vi har stemt på i denne term. 0 = ingen endnu.
 	lastHeartbeat time.Time // hvornår vi sidst hørte fra lederen.
+
+
+	bidMu sync.Mutex // One bid at a time on leader. Keep under repli, while mu only held briefly.
 }
 
 type BidEntry struct {
